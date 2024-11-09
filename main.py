@@ -1,12 +1,18 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QLineEdit, QTextEdit
-from PyQt6.QtCore import Qt, QTimer, QTime
+import requests
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+from PyQt6.QtGui import QPixmap, QIcon
+from PyQt6.QtCore import Qt
+from io import BytesIO
+from PyQt6.QtWidgets import QSpacerItem, QSizePolicy
 
+from credentials import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
 
 # Function to convert twips to pixels
 def twips_to_pixels(twips):
     return abs(twips) // 15
-
 
 # Example registry values (replace with the values from your registry)
 icon_spacing_twips = -1140
@@ -20,41 +26,111 @@ icon_height = twips_to_pixels(icon_vertical_spacing_twips)
 large_icon_width = icon_width * 3
 large_icon_height = icon_height * 3
 
+# Authenticate with Spotify
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+    client_id=CLIENT_ID,
+    client_secret=CLIENT_SECRET,
+    redirect_uri=REDIRECT_URI,
+    scope="user-read-playback-state,user-modify-playback-state"
+))
 
-class WhiteDraggableSquare(QWidget):
+class SpotifyWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowFlags(
-            Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+            Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setStyleSheet("background-color: white; border: 1px solid black;")
         self.setFixedSize(large_icon_width, large_icon_height)
+        self.setStyleSheet("background-color: #1DB954; border-radius: 10px;")
+
         self.dragging = False
 
-        # Layout for Widgets
-        layout = QVBoxLayout()
+        # Layout
+        self.layout = QVBoxLayout()
 
-        # Clock Widget
-        self.clock_label = QLabel()
-        self.clock_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.update_clock()
-        layout.addWidget(self.clock_label)
+        # Album artwork
+        self.album_art_label = QLabel()
+        self.album_art_label.setFixedSize(200, 200)
+        self.layout.addWidget(self.album_art_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # Timer to update clock every second
-        timer = QTimer(self)
-        timer.timeout.connect(self.update_clock)
-        timer.start(1000)
+        # Song title and artist
+        self.song_title_label = QLabel("Song Title")
+        self.song_title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+        self.layout.addWidget(self.song_title_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # Note Pad Widget
-        self.note_pad = QTextEdit()
-        self.note_pad.setPlaceholderText("Write your notes here...")
-        layout.addWidget(self.note_pad)
+        self.artist_label = QLabel("Artist")
+        self.artist_label.setStyleSheet("font-size: 14px; color: white;")
+        self.layout.addWidget(self.artist_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self.setLayout(layout)
 
-    def update_clock(self):
-        current_time = QTime.currentTime().toString("hh:mm:ss A")
-        self.clock_label.setText(current_time)
+        # Playback controls in one row
+        button_layout = QHBoxLayout()
+
+        # Styled buttons with icons and original green color
+        self.prev_button = QPushButton()
+        self.prev_button.setIcon(QIcon("icons/player-skip-back-white.png"))
+        self.prev_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #1DB954;
+                border: none;
+                border-radius: 10px;
+                padding: 3px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #17a589;
+            }
+            """
+        )
+
+        self.play_button = QPushButton()
+        self.play_button.setIcon(QIcon("icons/player-play-white.png"))
+        self.play_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #1DB954;
+                border: none;
+                border-radius: 10px;
+                padding: 3px;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #17a589;
+            }
+            """
+        )
+
+        self.next_button = QPushButton()
+        self.next_button.setIcon(QIcon("icons/player-skip-forward-white.png"))
+        self.next_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #1DB954;
+                border: none;
+                border-radius: 10px;
+                padding: 3px;
+                color: white;
+            
+            }
+            QPushButton:hover {
+                background-color: #17a589;
+            }
+            """
+        )
+
+        self.prev_button.clicked.connect(self.previous_song)
+        self.play_button.clicked.connect(self.toggle_playback)
+        self.next_button.clicked.connect(self.next_song)
+
+        button_layout.addWidget(self.prev_button)
+        button_layout.addWidget(self.play_button)
+        button_layout.addWidget(self.next_button)
+
+        self.layout.addLayout(button_layout)
+        self.setLayout(self.layout)
+
+        self.update_song_info()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -74,14 +150,44 @@ class WhiteDraggableSquare(QWidget):
             self.snap_to_grid()
 
     def snap_to_grid(self):
+        # Snap the widget to the nearest grid cell
         x = round(self.x() / icon_width) * icon_width
         y = round(self.y() / icon_height) * icon_height
         self.move(x, y)
 
+    def update_song_info(self):
+        current_track = sp.current_playback()
+        if current_track:
+            track = current_track['item']
+            self.song_title_label.setText(track['name'])
+            self.artist_label.setText(", ".join([artist['name'] for artist in track['artists']]))
+
+            # Get album art
+            album_art_url = track['album']['images'][0]['url']
+            response = requests.get(album_art_url)
+            pixmap = QPixmap()
+            pixmap.loadFromData(BytesIO(response.content).read())
+            self.album_art_label.setPixmap(pixmap.scaled(200, 200, Qt.AspectRatioMode.IgnoreAspectRatio))
+
+    def toggle_playback(self):
+        current_track = sp.current_playback()
+        if current_track and current_track['is_playing']:
+            sp.pause_playback()
+        else:
+            sp.start_playback()
+        self.update_song_info()
+
+    def next_song(self):
+        sp.next_track()
+        self.update_song_info()
+
+    def previous_song(self):
+        sp.previous_track()
+        self.update_song_info()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    widget = WhiteDraggableSquare()
+    widget = SpotifyWidget()
     widget.move(300, 300)
     widget.show()
     sys.exit(app.exec())
