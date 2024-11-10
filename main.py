@@ -2,12 +2,10 @@ import sys
 import requests
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QSpacerItem, QSizePolicy
 from PyQt6.QtGui import QPixmap, QIcon
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from io import BytesIO
-from PyQt6.QtWidgets import QSpacerItem, QSizePolicy
-
 from credentials import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
 
 # Function to convert twips to pixels
@@ -41,7 +39,7 @@ class SpotifyWidget(QWidget):
             Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setFixedSize(large_icon_width, large_icon_height)
-        self.setStyleSheet("background-color: #1DB954; border-radius: 10px;")
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 0.5); border-radius: 10px;")
 
         self.dragging = False
 
@@ -62,61 +60,28 @@ class SpotifyWidget(QWidget):
         self.artist_label.setStyleSheet("font-size: 14px; color: white;")
         self.layout.addWidget(self.artist_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
-
         # Playback controls in one row
         button_layout = QHBoxLayout()
 
-        # Styled buttons with icons and original green color
+        # Styled buttons with icons and green color
         self.prev_button = QPushButton()
         self.prev_button.setIcon(QIcon("icons/player-skip-back-white.png"))
         self.prev_button.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #1DB954;
-                border: none;
-                border-radius: 10px;
-                padding: 3px;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #17a589;
-            }
-            """
+            "background-color: #1DB954; border: none; border-radius: 10px; padding: 3px; color: white;"
         )
 
         self.play_button = QPushButton()
-        self.play_button.setIcon(QIcon("icons/player-play-white.png"))
+        self.play_icon = QIcon("icons/player-play-white.png")
+        self.pause_icon = QIcon("icons/player-pause-white.png")
+        self.play_button.setIcon(self.play_icon)
         self.play_button.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #1DB954;
-                border: none;
-                border-radius: 10px;
-                padding: 3px;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #17a589;
-            }
-            """
+            "background-color: #1DB954; border: none; border-radius: 10px; padding: 3px; color: white;"
         )
 
         self.next_button = QPushButton()
         self.next_button.setIcon(QIcon("icons/player-skip-forward-white.png"))
         self.next_button.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #1DB954;
-                border: none;
-                border-radius: 10px;
-                padding: 3px;
-                color: white;
-            
-            }
-            QPushButton:hover {
-                background-color: #17a589;
-            }
-            """
+            "background-color: #1DB954; border: none; border-radius: 10px; padding: 3px; color: white;"
         )
 
         self.prev_button.clicked.connect(self.previous_song)
@@ -127,8 +92,17 @@ class SpotifyWidget(QWidget):
         button_layout.addWidget(self.play_button)
         button_layout.addWidget(self.next_button)
 
+        # Add a vertical spacer to push the buttons up
+        spacer = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.layout.addItem(spacer)
         self.layout.addLayout(button_layout)
+
         self.setLayout(self.layout)
+
+        # Update song info every 5 seconds
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_song_info)
+        self.timer.start(5000)  # 5000 ms = 5 seconds
 
         self.update_song_info()
 
@@ -150,7 +124,6 @@ class SpotifyWidget(QWidget):
             self.snap_to_grid()
 
     def snap_to_grid(self):
-        # Snap the widget to the nearest grid cell
         x = round(self.x() / icon_width) * icon_width
         y = round(self.y() / icon_height) * icon_height
         self.move(x, y)
@@ -173,8 +146,10 @@ class SpotifyWidget(QWidget):
         current_track = sp.current_playback()
         if current_track and current_track['is_playing']:
             sp.pause_playback()
+            self.play_button.setIcon(self.play_icon)
         else:
             sp.start_playback()
+            self.play_button.setIcon(self.pause_icon)
         self.update_song_info()
 
     def next_song(self):
