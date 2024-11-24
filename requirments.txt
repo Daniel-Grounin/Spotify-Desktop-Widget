@@ -1,0 +1,4 @@
+requests
+spotipy
+PyQt6
+gTTS
