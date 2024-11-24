@@ -34,5 +34,6 @@ This project is a feature-rich Spotify Music Widget designed for Windows 10. Bui
 ## Author
 ###### Daniel Grounin
 
+---
 
 ![1731233639453](https://github.com/user-attachments/assets/21ec9399-2954-4d75-95bd-ea40dcf65040)
